@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Генератор табелей ТЭСИС-26</title>
+    <style>
+        :root { --bg: #fff; --text: #000; --border: #333; --header-bg: #f2f2f2; }
+        body { font-family: 'Arial', sans-serif; padding: 20px; background: var(--bg); color: var(--text); }
+        h1, h2 { text-align: center; }
+        .toolbar { margin-bottom: 20px; padding: 15px; background: #f0f4f8; border: 1px solid #ccc; border-radius: 8px; text-align: center; }
+        button { padding: 12px 25px; margin: 5px; cursor: pointer; border: 1px solid #666; background: #fff; font-size: 14px; }
+        button:hover { background: #e6f0ff; }
+        textarea { width: 100%; height: 200px; font-family: monospace; margin-bottom: 10px; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 40px; page-break-inside: avoid; }
+        th, td { border: 1px solid var(--border); padding: 5px 8px; text-align: center; font-size: 12px; vertical-align: middle; }
+        th { background: var(--header-bg); font-weight: bold; white-space: nowrap; }
+        .fio-col { text-align: left; width: 280px; }
+        .status-present { background: #ffffff; }
+        .status-sick { background: #ffe6e6; color: #d00; font-weight: bold; }
+        .status-family { background: #e6f2ff; color: #0066cc; }
+        .status-expelled { background: #f0f0f0; text-align: left; font-style: italic; color: #666; }
+        .total-col { font-weight: bold; background: #e6f7ff; }
+        .legend { font-size: 12px; margin-top: 5px; }
+        .legend span { display: inline-block; width: 15px; height: 15px; margin-right: 5px; vertical-align: middle; border: 1px solid #000; }
+        .legend-sick { background: #ffe6e6; }
+        .legend-family { background: #e6f2ff; }
+    </style>
+</head>
+<body>
+
+<h1>Генератор табелей: Группа ТЭСИС-26</h1>
+
+<div class="toolbar">
+    <button onclick="generateReport('full')">Сводный журнал</button>
+    <button onclick="generateReport('compensation')">Табель компенсации</button>
+    <button onclick="generateReport('svo')">Табель СВО</button>
+    <button onclick="exportToWord()">Экспорт в Word</button>
+</div>
+
+<h3>Вставьте сюда сырые данные (CSV) из вашей Google Таблицы (Sheet 2)</h3>
+<textarea id="csv-input" placeholder="Вставьте данные сюда..."></textarea>
+<button onclick="loadDataFromInput()">Загрузить данные</button>
+
+<div id="report-container"></div>
+
+<div class="legend">
+    <span class="status-sick"></span> б — Больничный
+    <span class="status-family"></span> н — По семейным / отсутствую
+    <span class="status-expelled"></span> — Отчислен / Переведен
+</div>
+
+<script>
+// === ИСХОДНЫЕ ДАННЫЕ (из вашего первого сообщения) ===
+// Если вы вставите свои данные в текстовое поле, они заменят эти.
+let ATTENDANCE_DATA = [
+    { fio: "Алексеев Евгений Евгеньевич", days: {"2026-09-14":"н","2026-09-15":"н","2026-09-16":"н","2026-09-21":"н","2026-09-25":"н","2026-09-29":"н"}, total: 17 },
+    { fio: "Алфимцев Матвей Игоревич", days: {"2026-09-09":"н","2026-09-11":"н","2026-09-21":"н","2026-09-25":"н","2026-09-28":"н","2026-09-29":"н"}, total: 15 },
+    { fio: "Багдасарьян Михаил Каренович", days: {"2026-09-10":"н","2026-09-11":"н","2026-09-24":"н","2026-09-25":"н","2026-09-28":"н"}, total: 17 },
+    { fio: "Батурин Александр Егорович", days: {"2026-09-08":"н","2026-09-10":"н","2026-09-14":"н","2026-09-15":"н","2026-09-16":"н","2026-09-21":"н","2026-09-23":"н","2026-09-25":"н"}, total: 14 },
+    { fio: "Ванин Артем Александрович", days: {"2026-09-10":"н","2026-09-24":"н"}, total: 21 },
+    { fio: "Васильева Виктория Анатольевна", days: {"2026-09-14":"н","2026-09-21":"н","2026-09-22":"н"}, total: 19 },
+    { fio: "Давлатов Мухаммадали Бахруллоевич", days: {"2026-09-28":"н"}, total: 21 },
+    { fio: "Долгополов Ярослав Алексеевич", days: {"2026-09-28":"н"}, total: 22 },
+    { fio: "Доломанова София Дмитриевна", days: {"2026-09-10":"н","2026-09-21":"н"}, total: 20 },
+    { fio: "Дубатовка Даниил Анатольевич", days: {"2026-09-23":"н"}, total: 21 },
+    { fio: "Зайридинов Исламбек Фазилдинович", days: {"2026-09-28":"н","2026-09-29":"н"}, total: 5, status: 'expelled', note: 'Зачислен приказом №136-у от 24.09.2026' },
+    { fio: "Захаров Никита Алексеевич", days: {"2026-09-08":"н","2026-09-10":"н","2026-09-21":"н","2026-09-25":"н"}, total: 16 },
+    { fio: "Золотов Александр Дмитриевич", days: {"2026-09-01":"н","2026-09-21":"н","2026-09-25":"н","2026-09-28":"н","2026-09-29":"н","2026-09-30":"н"}, total: 13 },
+    { fio: "Кабанов Семен Алексеевич", days: {"2026-09-17":"н","2026-09-23":"н","2026-09-25":"н"}, total: 20 },
+    { fio: "Калашников Сергей Сергеевич", days: {"2026-09-14":"н","2026-09-21":"н","2026-09-25":"н"}, total: 18 },
+    { fio: "Кобин Артем Олегович", days: {"2026-09-03":"н","2026-09-07":"н","2026-09-08":"н","2026-09-10":"н","2026-09-11":"н","2026-09-15":"н","2026-09-16":"н","2026-09-21":"н","2026-09-22":"н","2026-09-29":"н"}, total: 15 },
+    { fio: "Махмутов Никита Ренатович", days: {"2026-09-10":"н","2026-09-21":"н"}, total: 20, status: 'svo' },
+    { fio: "Мордвинов Владислав Сергеевич", days: {"2026-09-01":"х","2026-09-02":"х","2026-09-03":"х","2026-09-04":"х","2026-09-07":"х","2026-09-08":"х","2026-09-09":"х","2026-09-10":"х","2026-09-11":"х"}, total: 13, status: 'expelled', note: 'Зачислен приказом №127-у от 14.09.2026' },
+    { fio: "Нишонов Рустам Гайратбекович", days: {"2026-09-29":"н","2026-09-30":"н"}, total: 11 },
+    { fio: "Поздеев Виктор Владимирович", days: {"2026-09-02":"н","2026-09-07":"н","2026-09-14":"н","2026-09-21":"н","2026-09-25":"н"}, total: 16 },
+    { fio: "Саадуллаев Рамазан Шамильевич", days: {"2026-09-14":"н","2026-09-15":"н","2026-09-16":"н","2026-09-17":"н","2026-09-18":"н","2026-09-21":"н","2026-09-22":"н","2026-09-23":"н","2026-09-24":"н","2026-09-25":"н","2026-09-28":"н","2026-09-29":"н","2026-09-30":"н"}, total: 0, status: 'expelled', note: 'Отчислен приказом №128-у от 14.09.2026' },
+    { fio: "Саркориев Салам Саркориевич", days: {"2026-09-02":"н","2026-09-10":"н","2026-09-21":"н","2026-09-25":"н"}, total: 16 },
+    { fio: "Селиванов Артем Александрович", days: {"2026-09-01":"н","2026-09-02":"н","2026-09-03":"н","2026-09-04":"н","2026-09-07":"н","2026-09-08":"н","2026-09-09":"н","2026-09-10":"н","2026-09-11":"н","2026-09-14":"н","2026-09-15":"н","2026-09-16":"н","2026-09-17":"н","2026-09-18":"н","2026-09-21":"н","2026-09-22":"н","2026-09-23":"н","2026-09-25":"н","2026-09-28":"н","2026-09-29":"н"}, total: 3, status: 'svo' },
+    { fio: "Сухоруков Семен Алексеевич", days: {"2026-09-10":"н","2026-09-16":"н","2026-09-21":"н"}, total: 18 },
+    { fio: "Филинков Андрей Витальевич", days: {"2026-09-14":"н","2026-09-21":"н","2026-09-25":"н"}, total: 20 },
+    { fio: "Черников Андрей Алексеевич", days: {"2026-09-14":"н","2026-09-21":"н","2026-09-25":"н"}, total: 19 },
+    { fio: "Юрченко Артем Витальевич", days: {"2026-09-09":"н","2026-09-25":"н","2026-09-29":"н","2026-09-30":"н"}, total: 20 }
+];
+
+const DATES_SEP_2026 = [
+    '2026-09-01','2026-09-02','2026-09-03','2026-09-04','2026-09-07','2026-09-08','2026-09-09','2026-09-10','2026-09-11',
+    '2026-09-14','2026-09-15','2026-09-16','2026-09-17','2026-09-18','2026-09-21','2026-09-22','2026-09-23','2026-09-24',
+    '2026-09-25','2026-09-28','2026-09-29','2026-09-30'
+];
+
+// === ФУНКЦИЯ ГЕНЕРАЦИИ ===
+function generateReport(type) {
+    const container = document.getElementById('report-container');
+    container.innerHTML = '';
+    
+    let dataToRender = ATTENDANCE_DATA;
+    
+    if (type === 'svo') {
+        dataToRender = dataToRender.filter(s => s.status === 'svo');
+    } else if (type === 'expelled') {
+        dataToRender = dataToRender.filter(s => s.status === 'expelled');
+    }
+    
+    // Сортировка: отчисленные в конец
+    dataToRender.sort((a, b) => {
+        const aExp = a.status === 'expelled' ? 1 : (a.status === 'svo' ? 0 : 2);
+        const bExp = b.status === 'expelled' ? 1 : (b.status === 'svo' ? 0 : 2);
+        if (aExp !== bExp) return aExp - bExp;
+        return a.fio.localeCompare(b.fio);
+    });
+
+    const titleMap = {
+        'full': 'Сводный журнал учета посещаемости учебных занятий',
+        'compensation': 'Табель о частичной компенсации стоимости питания',
+        'svo': 'Табель о социальной поддержке (СВО)'
+    };
+    
+    const table = document.createElement('table');
+    
+    // Шапка
+    const thead = document.createElement('thead');
+    const headerRow = document.createElement('tr');
+    
+    const thNum = document.createElement('th'); thNum.textContent = '№'; headerRow.appendChild(thNum);
+    const thFio = document.createElement('th'); thFio.textContent = 'Фамилия, имя, отчество'; thFio.classList.add('fio-col'); headerRow.appendChild(thFio);
+    
+    DATES_SEP_2026.forEach(date => {
+        const th = document.createElement('th'); 
+        th.textContent = date.split('-')[2]; 
+        headerRow.appendChild(th);
+    });
+    
+    const thTotal = document.createElement('th'); thTotal.textContent = 'Всего'; thTotal.classList.add('total-col'); headerRow.appendChild(thTotal);
+    thead.appendChild(headerRow); table.appendChild(thead);
+    
+    // Тело
+    const tbody = document.createElement('tbody');
+    dataToRender.forEach((student, index) => {
+        const tr = document.createElement('tr');
+        
+        // №
+        const tdNum = document.createElement('td'); tdNum.textContent = index + 1; tr.appendChild(tdNum);
+        
+        // ФИО
+        const tdFio = document.createElement('td'); 
+        if (student.status === 'expelled') {
+            const colsCount = DATES_SEP_2026.length + 1;
+            tdFio.colSpan = colsCount;
+            tdFio.classList.add('status-expelled');
+            tdFio.textContent = `${student.fio} — ${student.note}`;
+            tr.appendChild(tdFio);
+            tbody.appendChild(tr);
+            return;
+        } else {
+            tdFio.textContent = student.fio;
+            tdFio.classList.add('fio-col');
+            tr.appendChild(tdFio);
+        }
+        
+        // Даты
+        DATES_SEP_2026.forEach(date => {
+            const td = document.createElement('td');
+            const status = student.days[date];
+            if (status === 'sick') {
+                td.textContent = 'б';
+                td.classList.add('status-sick');
+            } else if (status === 'family') {
+                td.textContent = 'н';
+                td.classList.add('status-family');
+            } else if (status === 'present' || status === undefined) {
+                td.textContent = '1';
+                td.classList.add('status-present');
+            }
+            tr.appendChild(td);
+        });
+        
+        // Итого
+        const tdTotal = document.createElement('td'); 
+        tdTotal.classList.add('total-col');
+        tdTotal.textContent = student.total;
+        tr.appendChild(tdTotal);
+        
+        tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    
+    // Вывод
+    container.innerHTML = '';
+    const title = document.createElement('h2');
+    title.textContent = titleMap[type];
+    container.appendChild(title);
+    container.appendChild(table);
+}
+
+// === ЗАГРУЗКА ИЗ ТЕКСТОВОГО ПОЛЯ (CSV) ===
+function loadDataFromInput() {
+    const text = document.getElementById('csv-input').value;
+    if (!text.trim()) return;
+    
+    const lines = text.split('\n').filter(l => l.trim() && l.includes('ФИО'));
+    if (lines.length === 0) return;
+    
+    // Пропускаем строку заголовков (ФИО, 1, 2...)
+    const dataLines = lines.slice(1);
+    
+    ATTENDANCE_DATA = dataLines.map(line => {
+        const parts = line.split('\t');
+        if (parts.length < 2) return null;
+        
+        const fio = parts[1];
+        
+        // Парсим статусы по датам (начиная с 3-го элемента)
+        const days = {};
+        for(let i = 3; i < parts.length - 1; i++) {
+            const val = parts[i];
+            if(val === 'н' || val === 'б' || val === 'х') {
+                const dateKey = DATES_SEP_2026[i-3];
+                days[dateKey] = val;
+            }
+        }
+        
+        // Считаем Итого (только 1 и б)
+        let total = 0;
+        Object.values(days).forEach(v => { if(v === '1' || v === 'б') total++; });
+        
+        // Определяем категорию
+        let status = 'present';
+        if (line.includes('х')) status = 'expelled';
+        else if (['Махмутов', 'Селиванов'].some(name => fio.includes(name))) status = 'svo';
+        
+        let note = '';
+        if (status === 'expelled') {
+            if (fio.includes('Саадуллаев')) note = 'Отчислен приказом №128-у от 14.09.2026';
+            if (fio.includes('Мордвинов')) note = 'Зачислен приказом №127-у от 14.09.2026';
+            if (fio.includes('Зайридинов')) note = 'Зачислен приказом №136-у от 24.09.2026';
+        }
+        
+        return { fio, days, total, status, note };
+    }).filter(s => s !== null);
+    
+    alert('Данные загружены. Нажмите кнопку нужного отчета выше.');
+}
+
+// === ЭКСПОРТ В WORD ===
+function exportToWord() {
+    const reportHTML = document.getElementById('report-container').innerHTML;
+    const header = `
+        <html xmlns:o="urn:schemas-microsoft-com:office:office" 
+              xmlns:w="urn:schemas-microsoft-com:office:word"
+              xmlns="http://www.w3.org/TR/REC-html40">
+        <head>
+            <meta charset="UTF-8">
+            <style>
+                table { border-collapse: collapse; font-family: Arial; font-size: 10pt; width: 100%; }
+                th, td { border: 1px solid #000; padding: 4px; text-align: center; }
+                .fio-col { text-align: left; width: 3cm; }
+                .total-col { font-weight: bold; }
+                .status-sick { background: #f2f2f2; }
+                .status-expelled { background: #f0f0f0; text-align: left; }
+            </style>
+        </head><body>
+            <h2>ГБПОУ МО «Люберецкий техникум...»</h2>
+            <h3>` + document.querySelector('#report-container h2').textContent + `</h3>
+    `;
+    const footer = `</body></html>`;
+    
+    const blob = new Blob([header + reportHTML + footer], { type: 'application/msword' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'Tabul_TESIS-26.doc';
+    a.click();
+    URL.revokeObjectURL(url);
+}
+</script>
+
+</body>
+</html>
